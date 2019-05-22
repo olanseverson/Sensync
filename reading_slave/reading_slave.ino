@@ -18,6 +18,9 @@ const int s1 = 6;                        //Arduino pin 6 to control pin S1
 const int enable_1 = 5;                   //Arduino pin 5 to control pin E on shield 1
 const int enable_2 = 4;                  //Arduino pin 4 to control pin E on shield 2
 
+long period = 5000;                      //delay(ms) for sending data to WeMOS (uploading to inet)
+long storedTime ;
+
 String inputstring = "";                              //a string to hold incoming data from the PC
 String sensorstring = "";                             //a string to hold the data from the Atlas Scientific product
 boolean input_string_complete = false;                //have we received all the data from the PC
@@ -38,6 +41,7 @@ void setup() {                                        //set up the hardware
 
   Serial.begin(9600);                                 //set baud rate for the hardware serial port_0 to 9600
   myserial.begin(9600);                               //set baud rate for the software serial port to 9600
+  Serial1.begin(9600);                                //set baud rate for the hardware serial port_1 to 9600
   inputstring.reserve(10);                            //set aside some bytes for receiving data from the PC
   sensorstring.reserve(30);                           //set aside some bytes for receiving data from Atlas Scientific product
 }
@@ -46,24 +50,33 @@ void setup() {                                        //set up the hardware
 void serialEvent() {                                  //if the hardware serial port_0 receives a char
   inputstring = Serial.readStringUntil(13);           //read the string until we see a <CR>
   input_string_complete = true;                       //set the flag used to tell if we have received a completed string from the PC
+  storedTime = millis();
 }
 
 void loop() {                                         //here we go...
+  String allData = "";  
   for (int i = 0; i < 4; i++)
   {
     channel = i;
     change_serial_mux_channel();
-    
-    Serial.print(i);
-    Serial.print(" =>> ");
-    requestToSensor("r");
-    //    requestToSensor("i");Serial.println();
-    delay(2000);
+    Serial.print(info(requestToSensor("i")) + " : ");
+    String value = readUntil('*', requestToSensor("r"));
+    value.trim();
+    Serial.println(value);
+    delay(1000);
+    allData+=value + ",";
+  }
+
+  if((millis() - storedTime)>=period){
+    Serial.println(allData);
+    Serial1.println(allData);
+    storedTime= millis();
   }
   delay(1000);
 }
 
-void requestToSensor(String inputstring) {
+String requestToSensor(String inputstring) {
+  sensorstring = "";                                //clear the string
   myserial.print(inputstring);                      //send that string to the Atlas Scientific product
   myserial.print('\r');                             //add a <CR> to the end of the string
   delay(1000);
@@ -78,7 +91,7 @@ void requestToSensor(String inputstring) {
 
 
   if (sensor_string_complete == true) {               //if a string from the Atlas Scientific product has been received in its entirety
-    Serial.println(sensorstring);                     //send that string to the PC's serial monitor
+    //    Serial.println(sensorstring);                     //send that string to the PC's serial monitor
     /*                                                //uncomment this section to see how to convert the DO reading from a string to a float
       if (isdigit(sensorstring[0])) {                   //if the first character in the string is a digit
       DO = sensorstring.toFloat();                    //convert the string to a floating point number so it can be evaluated by the Arduino
@@ -90,8 +103,11 @@ void requestToSensor(String inputstring) {
       }
       }
     */
-    sensorstring = "";                                //clear the string
+
     sensor_string_complete = false;                   //reset the flag used to tell if we have received a completed string from the Atlas Scientific product
+    return sensorstring;
+  } else {
+    return "";
   }
 }
 
@@ -161,170 +177,25 @@ void change_serial_mux_channel() {           // configures the serial muxers dep
   }
 }
 
-boolean request_serial_info() {                        // helper to request info from a uart stamp and parse the answer into the global stamp_ variables
-
-  clearIncomingBuffer();
-  myserial.write("i");                                // send "i" which returns info on all versions of the stamps
-  myserial.write("\r");
-
-  delay(150);                             // give it some time to send an answer
-
-  int sensor_bytes_received = myserial.readBytesUntil(13, sensordata, 9);  //we read the data sent from the Atlas Scientific device until we see a <CR>. We also count how many character have been received
-
-  if (sensor_bytes_received > 0) {                     // there's an answer
-    answerReceived = true;                             // so we can globally know if there was an answer on this channel
-
-    if ( parseInfo() ) {                               // try to parse the answer string
-      delay(100);
-      clearIncomingBuffer();                           // some stamps burp more info (*OK or something). we're not interested yet.
-      return true;
-    }
+String info(String sensorType) {
+  if (sensorType.indexOf("pH") != -1) {
+    return "EZO pH (pH)";
+  } else if (sensorType.indexOf("DO") != -1) {
+    return "EZO DO (mg/L)";
+  } else if (sensorType.indexOf("EC") != -1) {
+    return "EZO EC (EC(uS/cm);TDS(ppm);S(ppt);SG)";
+  } else if (sensorType.indexOf("RTD") != -1) {
+    return "EZO RTD (degC)";
+  } else {
+    return "undefined";
   }
-
-  return false;                                        // it was not possible to get info from the stamp
 }
 
-boolean parseInfo() {                  // parses the answer to a "i" command. returns true if answer was parseable, false if not.
-
-  // example:
-  // PH EZO  -> '?I,pH,1.1'
-  // ORP EZO -> '?I,OR,1.0'   (-> wrong in documentation 'OR' instead of 'ORP')
-  // DO EZO  -> '?I,D.O.,1.0' || '?I,DO,1.7' (-> exists in D.O. and DO form)
-  // EC EZO  -> '?I,EC,1.0 '
-  // TEMP EZO-> '?I,RTD,1.2'
-
-
-  // Legazy PH  -> 'P,V5.0,5/13'
-  // Legazy ORP -> 'O,V4.4,2/13'
-  // Legazy DO  -> 'D,V5.0,1/13'
-  // Legazy EC  -> 'E,V3.1,5/13'
-
-  if (sensordata[0] == '?' && sensordata[1] == 'I') {          // seems to be an EZO stamp
-
-    // PH EZO
-    if (sensordata[3] == 'p' && sensordata[4] == 'H') {
-      stamp_type = F("EZO pH");
-      stamp_version[0] = sensordata[6];
-      stamp_version[1] = sensordata[7];
-      stamp_version[2] = sensordata[8];
-
-      return true;
-
-      // ORP EZO
+String readUntil(char delimiter, String input){
+    String data = input;
+    int i = data.indexOf(delimiter);
+    if (i!= -1) {
+      data.remove(i);
     }
-    else if (sensordata[3] == 'O' && sensordata[4] == 'R') {
-      stamp_type = F("EZO ORP");
-      stamp_version[0] = sensordata[6];
-      stamp_version[1] = sensordata[7];
-      stamp_version[2] = sensordata[8];
-
-      return true;
-
-      // DO EZO
-    }
-    else if (sensordata[3] == 'D' && sensordata[4] == 'O') {
-      stamp_type = F("EZO DO");
-      stamp_version[0] = sensordata[6];
-      stamp_version[1] = sensordata[7];
-      stamp_version[2] = sensordata[8];
-
-      return true;
-
-      // D.O. EZO
-    }
-    else if (sensordata[3] == 'D' && sensordata[4] == '.' && sensordata[5] == 'O' && sensordata[6] == '.') {
-      stamp_type = F("EZO DO");
-      stamp_version[0] = sensordata[8];
-      stamp_version[1] = sensordata[9];
-      stamp_version[2] = sensordata[10];
-
-      return true;
-
-      // EC EZO
-    }
-    else if (sensordata[3] == 'E' && sensordata[4] == 'C') {
-      stamp_type = F("EZO EC");
-      stamp_version[0] = sensordata[6];
-      stamp_version[1] = sensordata[7];
-      stamp_version[2] = sensordata[8];
-
-      return true;
-      
-      // RTD EZO
-    }
-    else if (sensordata[3] == 'R' && sensordata[4] == 'T' && sensordata[5] == 'D') {
-      stamp_type = F("EZO RTD");
-      stamp_version[0] = sensordata[7];
-      stamp_version[1] = sensordata[8];
-      stamp_version[2] = sensordata[9];
-
-      return true;
-
-      // unknown EZO stamp
-    }
-    else {
-      stamp_type = F("unknown EZO stamp");
-      return true;
-    }
-
-  }
-
-  // it's a legacy stamp (non-EZO)
-  else
-  {
-    // Legacy pH
-    if ( sensordata[0] == 'P') {
-      stamp_type = F("pH (legacy)");
-      stamp_version[0] = sensordata[3];
-      stamp_version[1] = sensordata[4];
-      stamp_version[2] = sensordata[5];
-      stamp_version[3] = 0;
-      return true;
-
-      // legacy ORP
-    }
-    else if ( sensordata[0] == 'O') {
-      stamp_type = F("ORP (legacy)");
-      stamp_version[0] = sensordata[3];
-      stamp_version[1] = sensordata[4];
-      stamp_version[2] = sensordata[5];
-      stamp_version[3] = 0;
-      return true;
-
-      // Legacy D.O.
-    }
-    else if ( sensordata[0] == 'D') {
-      stamp_type = F("D.O. (legacy)");
-      stamp_version[0] = sensordata[3];
-      stamp_version[1] = sensordata[4];
-      stamp_version[2] = sensordata[5];
-      stamp_version[3] = 0;
-      return true;
-
-      // Lecagy EC
-    }
-    else if ( sensordata[0] == 'E') {
-      stamp_type = F("EC (legacy)");
-      stamp_version[0] = sensordata[3];
-      stamp_version[1] = sensordata[4];
-      stamp_version[2] = sensordata[5];
-      stamp_version[3] = 0;
-      return true;
-    }
-  }
-
-  /*
-    Serial.println("can not parse data: ");
-    Serial.print("'");
-    Serial.print(sensordata);
-    Serial.println("'");
-  */
-  return false;        // can not parse this info-string
-}
-
-void clearIncomingBuffer() {          // "clears" the incoming soft-serial buffer
-  while (myserial.available() ) {
-    //Serial.print((char)sSerial.read());
-    myserial.read();
-  }
+    return data;
 }
