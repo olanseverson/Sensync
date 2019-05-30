@@ -10,6 +10,7 @@
 #include <SoftwareSerial.h>                           //we have to include the SoftwareSerial library, or else we can't use it
 #define rx 11                                          //define what pin rx is going to be
 #define tx 10                                          //define what pin tx is going to be
+#define UPLOAD_TIME 2
 
 SoftwareSerial myserial(rx, tx);                      //define how the soft serial port is going to work
 
@@ -18,7 +19,8 @@ const int s1 = 6;                        //Arduino pin 6 to control pin S1
 const int enable_1 = 5;                   //Arduino pin 5 to control pin E on shield 1
 const int enable_2 = 4;                  //Arduino pin 4 to control pin E on shield 2
 
-long period = 5000;                      //delay(ms) for sending data to WeMOS (uploading to inet)
+long period = 60000;                      //delay(ms) for sending data to WeMOS (uploading to inet)
+static int countSec;                       //delay(s) for sending data to WeMOS (uploading to inet)
 long storedTime ;
 
 String inputstring = "";                              //a string to hold incoming data from the PC
@@ -44,6 +46,7 @@ void setup() {                                        //set up the hardware
   Serial1.begin(9600);                                //set baud rate for the hardware serial port_1 to 9600
   inputstring.reserve(10);                            //set aside some bytes for receiving data from the PC
   sensorstring.reserve(30);                           //set aside some bytes for receiving data from Atlas Scientific product
+  countSec = 0;
 }
 
 
@@ -68,9 +71,14 @@ void loop() {                                         //here we go...
   }
 
   if((millis() - storedTime)>=period){
+    if(countSec == UPLOAD_TIME){
+      countSec = 0;
+      Serial1.println(allData);
+    }
+//    Serial1.println(allData); // for debugging
     Serial.println(allData);
-    Serial1.println(allData);
-    storedTime= millis();
+    storedTime= millis();  
+    countSec++;
   }
   delay(1000);
 }
