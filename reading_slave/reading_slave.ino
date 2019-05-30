@@ -55,7 +55,9 @@ void serialEvent() {                                  //if the hardware serial p
   input_string_complete = true;                       //set the flag used to tell if we have received a completed string from the PC
   storedTime = millis();
 }
-
+//=======================================================================
+//                    Main Program Loop
+//=======================================================================
 void loop() {                                         //here we go...
   String allData = "";  
   for (int i = 0; i < 4; i++)
@@ -74,14 +76,17 @@ void loop() {                                         //here we go...
     if(countSec == UPLOAD_TIME){
       countSec = 0;
       Serial1.println(allData);
+      Serial.println(allData);
     }
 //    Serial1.println(allData); // for debugging
-    Serial.println(allData);
+//    Serial.println(allData);
     storedTime= millis();  
     countSec++;
+    Serial.println(countSec);
   }
   delay(1000);
 }
+//=======================================================================
 
 String requestToSensor(String inputstring) {
   sensorstring = "";                                //clear the string
