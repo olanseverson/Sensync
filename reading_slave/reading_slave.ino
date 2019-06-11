@@ -1,3 +1,4 @@
+
 //This code was written to be easy to understand.
 //Modify this code as you see fit.
 //This code will output data to the Arduino serial monitor.
@@ -6,11 +7,32 @@
 //An Arduino UNO was used to test this code.
 //This code was last tested 6/2017
 
+//https://randomnerdtutorials.com/guide-to-1-8-tft-display-with-arduino/
+
 
 #include <SoftwareSerial.h>                           //we have to include the SoftwareSerial library, or else we can't use it
+// include TFT and SPI libraries
+#include <TFT.h>
+#include <SPI.h>
+
+//==== TFT ====
+// tft 1.8 inch 128x160 pixel
+// pin definition for Arduino MEGA
+// MOSI 51   11(UNO)
+// SCK 52    13(UNO)
+#define cs   53  // 10 IN UNO
+#define dc   49
+#define rst  48
+// create an instance of the library
+TFT TFTscreen = TFT(cs, dc, rst);
+const char param[7][6] = {"pH", "DO", "COND", "TDS", "SALT", "SWSG", "TEMP"};
+char val[7][10] = {"", "", "", "", "", "", ""};
+int tftXPos;
+
+//==== TENTACLE SHIELD ====
 #define rx 11                                          //define what pin rx is going to be
 #define tx 10                                          //define what pin tx is going to be
-#define UPLOAD_TIME 2
+#define UPLOAD_TIME 15
 
 SoftwareSerial myserial(rx, tx);                      //define how the soft serial port is going to work
 
@@ -36,6 +58,7 @@ char stamp_version[4];                   // hold the version of the stamp
 boolean answerReceived;                  // com-functions store here if a connection-attempt was successful
 
 void setup() {                                        //set up the hardware
+  // == SENSOR SETTING ==
   pinMode(s1, OUTPUT);                   //Set the digital pin as output.
   pinMode(s0, OUTPUT);                   //Set the digital pin as output.
   pinMode(enable_1, OUTPUT);             //Set the digital pin as output.
@@ -47,6 +70,18 @@ void setup() {                                        //set up the hardware
   inputstring.reserve(10);                            //set aside some bytes for receiving data from the PC
   sensorstring.reserve(30);                           //set aside some bytes for receiving data from Atlas Scientific product
   countSec = 0;
+
+  // ==TFT SETTING ==
+  //initialize the library
+  TFTscreen.begin();
+
+  // clear the screen with a black background
+  TFTscreen.background(0, 0, 0);
+  //set the text size
+  TFTscreen.setTextSize(1);
+  TFTscreen.setRotation(0);
+  TFTscreen.stroke(255, 255, 255);
+  TFTscreen.text("Starting .... ", 0, 0);
 }
 
 
@@ -59,7 +94,11 @@ void serialEvent() {                                  //if the hardware serial p
 //                    Main Program Loop
 //=======================================================================
 void loop() {                                         //here we go...
-  String allData = "";  
+  String allData = "";
+  TFTscreen.background(0, 0, 0); // clear the screen
+  char val[7][10] = {"", "", "", "", "", "", ""}; // save the  sensor reading
+  TFTscreen.text("DATA :", 0, 0);
+  int count = 0;
   for (int i = 0; i < 4; i++)
   {
     channel = i;
@@ -69,18 +108,45 @@ void loop() {                                         //here we go...
     value.trim();
     Serial.println(value);
     delay(1000);
-    allData+=value + ",";
+    allData += value + ",";
+
+    // to tft display
+    if (i == 2) { // if getting data from EC, parse 4 types of data
+      String temp = value + ',';
+      for (int j = 0; j < 4; j++) {
+        int idx = temp.indexOf(',');
+        temp.toCharArray(val[count], idx+1);
+        if (idx != -1) {
+          temp.remove(0, idx+1);
+        }
+        count ++;
+      }
+      // print to tft display
+      for (int i = 0; i < 7; i++) {
+        
+        TFTscreen.text(param[i], 0, (i + 1) * 10);
+        TFTscreen.text(val[i], 35, (i + 1) * 10);
+      }
+    } else {
+      value.toCharArray(val[count], 10);
+      count++;
+      // print to tft display
+      for (int i = 0; i < 7; i++) {
+        TFTscreen.text(param[i], 0, (i + 1) * 10);
+        TFTscreen.text(val[i], 35, (i + 1) * 10);
+      }
+    }
   }
 
-  if((millis() - storedTime)>=period){
-    if(countSec == UPLOAD_TIME){
+  if ((millis() - storedTime) >= period) {
+    if (countSec == UPLOAD_TIME) {
       countSec = 0;
       Serial1.println(allData);
       Serial.println(allData);
     }
-//    Serial1.println(allData); // for debugging
-//    Serial.println(allData);
-    storedTime= millis();  
+    //    Serial1.println(allData); // for debugging
+    //    Serial.println(allData);
+    storedTime = millis();
     countSec++;
     Serial.println(countSec);
   }
@@ -204,11 +270,11 @@ String info(String sensorType) {
   }
 }
 
-String readUntil(char delimiter, String input){
-    String data = input;
-    int i = data.indexOf(delimiter);
-    if (i!= -1) {
-      data.remove(i);
-    }
-    return data;
+String readUntil(char delimiter, String input) {
+  String data = input;
+  int i = data.indexOf(delimiter);
+  if (i != -1) {
+    data.remove(i);
+  }
+  return data;
 }
