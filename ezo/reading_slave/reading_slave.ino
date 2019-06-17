@@ -16,6 +16,7 @@
 #include <SPI.h>
 
 //==== TFT ====
+// pin : 3.3 52 51 49 48 53 gnd vcc
 // tft 1.8 inch 128x160 pixel
 // pin definition for Arduino MEGA
 // MOSI 51   11(UNO)
@@ -25,14 +26,14 @@
 #define rst  48
 // create an instance of the library
 TFT TFTscreen = TFT(cs, dc, rst);
-const char param[7][6] = {"pH", "DO", "COND", "TDS", "SALT", "SWSG", "TEMP"};
-char val[7][10] = {"", "", "", "", "", "", ""};
 int tftXPos;
+unsigned long tftTime = 0;
 
 //==== TENTACLE SHIELD ====
+#define VCC_PIN  13                                     // VCC alternatif to WiMos VCC 5 V
 #define rx 11                                          //define what pin rx is going to be
 #define tx 10                                          //define what pin tx is going to be
-#define UPLOAD_TIME 15
+#define UPLOAD_TIME 15                                  // period for uploading to server (in minute(s))
 
 SoftwareSerial myserial(rx, tx);                      //define how the soft serial port is going to work
 
@@ -41,9 +42,8 @@ const int s1 = 6;                        //Arduino pin 6 to control pin S1
 const int enable_1 = 5;                   //Arduino pin 5 to control pin E on shield 1
 const int enable_2 = 4;                  //Arduino pin 4 to control pin E on shield 2
 
-long period = 60000;                      //delay(ms) for sending data to WeMOS (uploading to inet)
 static int countSec;                       //delay(s) for sending data to WeMOS (uploading to inet)
-long storedTime ;
+unsigned long serverTime = 0 ;
 
 String inputstring = "";                              //a string to hold incoming data from the PC
 String sensorstring = "";                             //a string to hold the data from the Atlas Scientific product
@@ -63,7 +63,9 @@ void setup() {                                        //set up the hardware
   pinMode(s0, OUTPUT);                   //Set the digital pin as output.
   pinMode(enable_1, OUTPUT);             //Set the digital pin as output.
   pinMode(enable_2, OUTPUT);             //Set the digital pin as output.
+  pinMode(VCC_PIN, OUTPUT);             //Set the digital pin as output.
 
+  digitalWrite(VCC_PIN, HIGH);
   Serial.begin(9600);                                 //set baud rate for the hardware serial port_0 to 9600
   myserial.begin(9600);                               //set baud rate for the software serial port to 9600
   Serial1.begin(9600);                                //set baud rate for the hardware serial port_1 to 9600
@@ -79,21 +81,32 @@ void setup() {                                        //set up the hardware
   TFTscreen.background(0, 0, 0);
   //set the text size
   TFTscreen.setTextSize(1);
-  TFTscreen.setRotation(0);
+  TFTscreen.setRotation(2);
   TFTscreen.stroke(255, 255, 255);
   TFTscreen.text("Starting .... ", 0, 0);
-}
-
-
-void serialEvent() {                                  //if the hardware serial port_0 receives a char
-  inputstring = Serial.readStringUntil(13);           //read the string until we see a <CR>
-  input_string_complete = true;                       //set the flag used to tell if we have received a completed string from the PC
-  storedTime = millis();
 }
 //=======================================================================
 //                    Main Program Loop
 //=======================================================================
 void loop() {                                         //here we go...
+  if ((millis() - serverTime) > 1000) { // increase every 1 second
+    if (countSec == UPLOAD_TIME * 60 ) {
+      countSec = 0;
+      String allData = getAllData();
+      Serial1.println(allData);
+      Serial.println(allData);
+      delay(1000);
+      printToTFT(allData);
+    }
+    serverTime = millis();
+    countSec++;
+    Serial.println(countSec);
+  }
+}
+//=======================================================================
+
+
+String getAllData() {
   String allData = "";
   TFTscreen.background(0, 0, 0); // clear the screen
   char val[7][10] = {"", "", "", "", "", "", ""}; // save the  sensor reading
@@ -103,56 +116,35 @@ void loop() {                                         //here we go...
   {
     channel = i;
     change_serial_mux_channel();
-    Serial.print(info(requestToSensor("i")) + " : ");
+//    Serial.print(info(requestToSensor("i")) + " : ");     // FOR DEBUGGING
     String value = readUntil('*', requestToSensor("r"));
     value.trim();
-    Serial.println(value);
-    delay(1000);
+//    Serial.println(value);                                //FOR DEBUGGING
     allData += value + ",";
-
-    // to tft display
-    if (i == 2) { // if getting data from EC, parse 4 types of data
-      String temp = value + ',';
-      for (int j = 0; j < 4; j++) {
-        int idx = temp.indexOf(',');
-        temp.toCharArray(val[count], idx+1);
-        if (idx != -1) {
-          temp.remove(0, idx+1);
-        }
-        count ++;
-      }
-      // print to tft display
-      for (int i = 0; i < 7; i++) {
-        
-        TFTscreen.text(param[i], 0, (i + 1) * 10);
-        TFTscreen.text(val[i], 35, (i + 1) * 10);
-      }
-    } else {
-      value.toCharArray(val[count], 10);
-      count++;
-      // print to tft display
-      for (int i = 0; i < 7; i++) {
-        TFTscreen.text(param[i], 0, (i + 1) * 10);
-        TFTscreen.text(val[i], 35, (i + 1) * 10);
-      }
-    }
   }
-
-  if ((millis() - storedTime) >= period) {
-    if (countSec == UPLOAD_TIME) {
-      countSec = 0;
-      Serial1.println(allData);
-      Serial.println(allData);
-    }
-    //    Serial1.println(allData); // for debugging
-    //    Serial.println(allData);
-    storedTime = millis();
-    countSec++;
-    Serial.println(countSec);
-  }
-  delay(1000);
+  return allData;
 }
-//=======================================================================
+
+void printToTFT(String data)
+//print all raw data to more readable format to TFT Display
+{
+  const char param[7][6] = {"pH", "DO", "COND", "TDS", "SALT", "SWSG", "TEMP"};
+  char val[7][10] = {"", "", "", "", "", "", ""};
+  String temp = data;
+  for (int i = 0; i < 7; i++) {
+    int idx = temp.indexOf(',');
+    temp.toCharArray(val[i], idx + 1);
+    if (idx != -1) {
+      temp.remove(0, idx + 1);
+    }
+  }
+  // print to tft display
+  for (int i = 0; i < 7; i++) {
+    TFTscreen.text(param[i], 0, (i + 1) * 10);
+    TFTscreen.text(val[i], 35, (i + 1) * 10);
+  }
+}
+
 
 String requestToSensor(String inputstring) {
   sensorstring = "";                                //clear the string
