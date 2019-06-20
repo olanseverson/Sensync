@@ -41,6 +41,18 @@ enum upload_status {
 enum upload_status state = idle;
 //======================================
 
+
+//============== TIMING ===============
+#define TICK 1000 // in ms
+#define UPLOAD_TIME   15
+#define UPDATE_TIME   1
+int second = 0;        // second counter
+int minute = 0;        // second counter
+long timer = 0;  // storage for timer to upload
+bool isUpdate = false;
+bool isUpload = false;
+
+//======================================
 void setup()
 {
   pinMode(MAX485_RE_NEG, OUTPUT);
@@ -65,27 +77,48 @@ void setup()
   node.postTransmission(postTransmission);
 
   //WAITING FOR WEMOS TO CONNECT TO INTERNET
-  while(!Serial1.available()){ // empty the rx buffer
+  while (!Serial1.available()) { // empty the rx buffer
     Serial.print(".");
     delay(500);
   }
+  timer = millis();
 }
 
 void loop()
 {
-  float tss = getTSS(0x02);
-  float ph = getPH(10, SensorPin);
-  
+  float tss, ph;
   String data = "";
-  data = String(ph)+ ",";
-  data = data + String(tss) + ",";
-  Serial.println(data);
-  echo(data);
-  delay(5000);
+  if (millis() - timer > TICK) {
+    second++; //increase every TICK millisecond
+    timer = millis();
+    if (second == 60) {
+      second = 0;
+      minute++;
+      Serial.println(minute);
+      isUpload = false;
+      isUpdate = false;
+    }
+
+    if ((minute % UPDATE_TIME == 0) && minute != 0 && !isUpdate) { // update data
+      tss = getTSS(0x02);
+      ph = getPH(10, SensorPin);
+      data = String(ph) + ",";
+      data = data + String(tss) + ",";
+      Serial.println(data);
+      Serial1.print("0"); // to ensure that communication is active
+      isUpdate = true;
+    }
+
+    if ((minute % UPLOAD_TIME == 0) && minute != 0 && !isUpload) { //send to WeMos for uploading
+    echo(data);
+    isUpload = true;
+    }
+    Serial.println(second);
+  }
 }
 
 void echo(String data) {
-  while(Serial1.available()){ // empty the rx buffer
+  while (Serial1.available()) { // empty the rx buffer
     Serial1.read();
   }
   printState();
@@ -98,7 +131,7 @@ void echo(String data) {
     state = waiting;
     printState();
   }
-  
+
   state = receiving;
   printState();
 

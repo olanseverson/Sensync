@@ -16,7 +16,7 @@ const char* ssid = "Get Sensync";
 const char* password = "makanminggu12";
 const char* serverThingspeak = "api.thingspeak.com";
 
-const String url_upload   = "http://server.getsensync.com/proc/sparin/process.php?";
+const String url_upload   = "http://server.getsensync.com/proc/sparing/process.php?";
 const String param[2] = {"ph", "tss"};
 
 WiFiClient client;
@@ -24,6 +24,22 @@ WiFiClient client;
 String rawData = "";
 int ledState = LOW;
 bool isUpdated = false;
+
+//================ WeMos ===============
+#define Idle 0
+#define SENDING 1
+#define WAITING 2
+#define RECEIVING 3
+
+enum upload_status {
+  idle = Idle,
+  sending = SENDING,
+  waiting = WAITING,
+  receiving = RECEIVING,
+};
+
+enum upload_status state = idle;
+//======================================
 
 void setup() {
   pinMode(LED_PIN, OUTPUT);
@@ -51,24 +67,38 @@ void setup() {
 }
 
 void loop() {
+  while (!ardSerial.available()) {
+    delay(100);
+    state = idle;
+    printState();
+  }
   updateSerial();
 }
 
 void updateSerial()
 {
   delay(100);
-  rawData = "";
   if (ardSerial.available())
   {
+    rawData = "";
+    state = receiving;
+    printState();
     while (ardSerial.available()) {
       char in = ardSerial.read();
       rawData += in;
     }
+    state = waiting;
+    printState();
     Serial.println(rawData);//Forward what Software Serial received to Serial Port
 
-    String data = parseData(rawData, ",", false);
-    Serial.println(data);
-    uploadToServer(data);
+    if (rawData != "0") {
+      rawData.remove(0,1);
+      String data = parseData(rawData, ",", false);
+      state = sending;
+      printState();
+      Serial.println(data);
+      uploadToServer(data);
+    }
   }
 }
 
@@ -118,4 +148,23 @@ void uploadToServer(String data) {
   delay(1000);
   ardSerial.print(httpCode);
   ardSerial.flush();
+}
+
+void printState() {
+  switch (state) {
+    case Idle:
+      Serial.println("IDLE");
+      break;
+    case SENDING:
+      Serial.println("SENDING");
+      break;
+    case WAITING:
+      Serial.println("WAITING");
+      break;
+    case RECEIVING:
+      Serial.println("RECEIVING");
+      break;
+
+  }
+
 }
