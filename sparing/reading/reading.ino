@@ -30,6 +30,23 @@ ModbusMaster node;
 #define SENDING 1
 #define WAITING 2
 #define RECEIVING 3
+//======================================
+
+
+//================= TFT ================
+#include <TFT.h>
+#include <SPI.h>
+// pin : 3.3 52 51 49 48 53 gnd vcc
+// tft 1.8 inch 128x160 pixel
+// pin definition for Arduino MEGA
+// MOSI 51   11(UNO)
+// SCK 52    13(UNO)
+#define cs   53  // 10 IN UNO
+#define dc   49
+#define rst  48
+// create an instance of the library
+TFT TFTscreen = TFT(cs, dc, rst);
+//======================================
 
 enum upload_status {
   idle = Idle,
@@ -44,14 +61,13 @@ enum upload_status state = idle;
 
 //============== TIMING ===============
 #define TICK 1000 // in ms
-#define UPLOAD_TIME   15
+#define UPLOAD_TIME   3
 #define UPDATE_TIME   1
 int second = 0;        // second counter
 int minute = 0;        // second counter
 long timer = 0;  // storage for timer to upload
 bool isUpdate = false;
 bool isUpload = false;
-
 //======================================
 void setup()
 {
@@ -76,18 +92,38 @@ void setup()
   node.preTransmission(preTransmission);
   node.postTransmission(postTransmission);
 
+  //======== TFT SETTING =======
+  //initialize the library
+  TFTscreen.begin();
+
+  // clear the screen with a black background
+  TFTscreen.background(0, 0, 0);
+  //set the text size
+  TFTscreen.stroke(255, 255, 255);
+  TFTscreen.setTextSize(1);
+  TFTscreen.setRotation(0);
+
   //WAITING FOR WEMOS TO CONNECT TO INTERNET
+  printLine("connecting....", 0, 0);
   while (!Serial1.available()) { // empty the rx buffer
     Serial.print(".");
     delay(500);
   }
+
   timer = millis();
+  deleteLine(0, 10);
+  printLine("CONNECTED", 0, 0);
+  delay(1000);
+  printLine("ph  : ", 0, 10);
+  printLine("tss : ", 0, 20);
+  printLine("0/"+ String(UPLOAD_TIME), 10, 150);
 }
 
 void loop()
 {
   float tss, ph;
   String data = "";
+  String temp = ""; // for display tft
   if (millis() - timer > TICK) {
     second++; //increase every TICK millisecond
     timer = millis();
@@ -97,6 +133,9 @@ void loop()
       Serial.println(minute);
       isUpload = false;
       isUpdate = false;
+      deleteLine(150, 10);
+      temp = String(minute) + "/" + String(UPLOAD_TIME);
+      printLine(temp, 10, 150);
     }
 
     if ((minute % UPDATE_TIME == 0) && minute != 0 && !isUpdate) { // update data
@@ -107,14 +146,33 @@ void loop()
       Serial.println(data);
       Serial1.print("0"); // to ensure that communication is active
       isUpdate = true;
+      deleteLine(10,20);
+      temp = "ph  : " + String(ph); printLine(temp, 0, 10);
+      temp = "tss : " + String(tss); printLine(temp, 0, 20);
     }
 
     if ((minute % UPLOAD_TIME == 0) && minute != 0 && !isUpload) { //send to WeMos for uploading
-    echo(data);
-    isUpload = true;
+      deleteLine(10,20);
+      temp = "ph  : " + String(ph); printLine(temp, 0, 10);
+      temp = "tss : " + String(tss); printLine(temp, 0, 20);
+      echo(data);
+      isUpload = true;
+      minute = 0;
     }
-    Serial.println(second);
+    Serial.println(second); 
   }
+}
+
+void deleteLine(int yStart, int height) {
+  TFTscreen.stroke(0, 0, 0); //black
+  TFTscreen.fill(0, 0, 0); //black
+  TFTscreen.rect(0, yStart, 128, height);
+}
+void printLine(String text, int xPos, int yPos) {
+  char buf[30] = "";
+  text.toCharArray(buf, 30);
+  TFTscreen.stroke(255, 255, 255);
+  TFTscreen.text(buf, xPos, yPos);
 }
 
 void echo(String data) {
