@@ -89,9 +89,9 @@ bool sendRequest(const char* host, const char* resource) {
 
   // Add the "location" object
   JsonObject data = doc.createNestedObject("data");
-  data["IDStasiun"] = "STASIUN-UJI";
+  data["IDStasiun"] = "UJI-14";
   data["Tanggal"] = "2019-05-06";
-  data["Jam"] = "14:00:00";
+  data["Jam"] = "14:31:00";
   data["Suhu" ] = 30;
   data["DHL"] = 12;
   data["TDS"] = 13;
@@ -127,7 +127,7 @@ bool sendRequest(const char* host, const char* resource) {
   // The above line prints:
   //{
   //  "data": {
-  //    "IDStasiun": "STASIUN-UJI",
+  //    "IDStasiun": "UJI-14",
   //    "Tanggal": "2019-05-06",
   //    "Jam": "14:00:00",
   //    "Suhu": 30,
