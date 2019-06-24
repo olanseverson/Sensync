@@ -61,7 +61,7 @@ enum upload_status state = idle;
 
 //============== TIMING ===============
 #define TICK 1000 // in ms
-#define UPLOAD_TIME   3
+#define UPLOAD_TIME   15
 #define UPDATE_TIME   1
 int second = 0;        // second counter
 int minute = 0;        // second counter
