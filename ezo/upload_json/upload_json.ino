@@ -32,6 +32,7 @@ const size_t MAX_CONTENT_SIZE = 512;       // max size of the HTTP response
 
 //================= JSON DATA =============================
 int data_uid = 0;                          // id from server
+int statusCode = 0;
 
 // data for JSON
 typedef struct sparing {
@@ -126,6 +127,34 @@ void loop() {
     printState();
   }
   updateSerial();
+}
+
+void updateSerial()
+{
+  Serial.println("here");
+  delay(100);
+  if (ardSerial.available())
+  {
+    rawData = "";
+    state = receiving;
+    printState();
+    while (ardSerial.available()) {
+      char in = ardSerial.read();
+      rawData += in;
+    }
+    state = waiting;
+    printState();
+    Serial.println(rawData);//Forward what Software Serial received to Serial Port
+
+    if (rawData != "0") {
+      rawData.remove(0, 1); // remove first char
+      parseData(rawData, ",");
+      uploadToMainServer();
+      ardSerial.println(statusCode);
+      state = sending;
+      printState();
+    }
+  }
 }
 
 // Open connection to the HTTP server (Node-RED running on Raspberry Pi)
@@ -285,6 +314,7 @@ void getResponse() {
 
   if (response.indexOf("200") == -1) { // transmission didn`t succeed
     Serial.println("Uploading Error");
+    statusCode  = -1;
     return;
   }
 
@@ -306,7 +336,7 @@ void getResponse() {
   serializeJsonPretty(doc, Serial); // print json data in pretty format
   // extract the value;
   data_uid = doc["rows"]["data_uid"];
-  const int statusCode = doc["status"]["statusCode"];
+  statusCode = doc["status"]["statusCode"];
   const char* statusDesc = doc["status"]["statusDesc"];
 
   Serial.println(data_uid);
@@ -375,32 +405,6 @@ void printState() {
     case RECEIVING:
       Serial.println("RECEIVING");
       break;
-  }
-}
-
-void updateSerial()
-{
-  delay(100);
-  if (ardSerial.available())
-  {
-    rawData = "";
-    state = receiving;
-    printState();
-    while (ardSerial.available()) {
-      char in = ardSerial.read();
-      rawData += in;
-    }
-    state = waiting;
-    printState();
-    Serial.println(rawData);//Forward what Software Serial received to Serial Port
-
-    if (rawData != "0") {
-      rawData.remove(0, 1); // remove first char
-      parseData(rawData, ",");
-      state = sending;
-      printState();
-      uploadToMainServer();
-    }
   }
 }
 
