@@ -5,6 +5,10 @@
   Rx/Tx is hooked up to the hardware serial port at 'Serial'.
   The Data Enable and Receiver Enable pins are hooked up as follows:
 */
+#define DEBUG_PORT Serial
+String rawData = "";
+// store sensorValue in format "pH", "tss", "flow"
+char sensorValue[3][10] = {"", "", ""};
 
 //============== TSS ===================
 #define rx 11                                          //define what pin rx is going to be
@@ -69,6 +73,20 @@ long timer = 0;  // storage for timer to upload
 bool isUpdate = false;
 bool isUpload = false;
 //======================================
+
+//=============== SIM800 ================
+//Create software serial object to communicate with SIM800L
+SoftwareSerial gsm(12, 13); //SIM800L Tx & Rx is connected to Arduino #3 & #2
+String number = "\"+6282130310254\"";
+String GSMData = "";
+boolean gprsConnectionSetup = false;
+
+//helper variables for waitUntilResponse() function
+static long maxResponseTime = 5000;
+unsigned long lastTimeGsm = 0;
+String responseGsm = "";
+//======================================
+
 void setup()
 {
   pinMode(MAX485_RE_NEG, OUTPUT);
@@ -85,6 +103,15 @@ void setup()
 
   // WeMos communication
   Serial1.begin(19200);
+
+  // GSM communication
+  gsm.begin(9600);                                //set baud rate for the hardware serial port_1 to 9600
+
+
+  //WAITING FOR GSM TO CONNECTED
+  ConnectGSM();
+  Serial.println("GSM Connected");
+
 
   // Modbus slave ID 1
   node.begin(10, mySerial);
@@ -116,13 +143,12 @@ void setup()
   delay(1000);
   printLine("ph  : ", 0, 10);
   printLine("tss : ", 0, 20);
-  printLine("0/"+ String(UPLOAD_TIME), 10, 150);
+  printLine("0/" + String(UPLOAD_TIME), 10, 150);
 }
 
 void loop()
 {
   float tss, ph;
-  String data = "";
   String temp = ""; // for display tft
   if (millis() - timer > TICK) {
     second++; //increase every TICK millisecond
@@ -141,25 +167,26 @@ void loop()
     if ((minute % UPDATE_TIME == 0) && minute != 0 && !isUpdate) { // update data
       tss = getTSS(0x02);
       ph = getPH(10, SensorPin);
-      data = String(ph) + ",";
-      data = data + String(tss) + ",";
-      Serial.println(data);
+      rawData = String(ph) + ",";
+      rawData = rawData + String(tss) + ",";
+      Serial.println(rawData);
       Serial1.print("0"); // to ensure that communication is active
       isUpdate = true;
-      deleteLine(10,20);
+      deleteLine(10, 20);
       temp = "ph  : " + String(ph); printLine(temp, 0, 10);
       temp = "tss : " + String(tss); printLine(temp, 0, 20);
     }
 
     if ((minute % UPLOAD_TIME == 0) && minute != 0 && !isUpload) { //send to WeMos for uploading
-      deleteLine(10,20);
+      deleteLine(10, 20);
       temp = "ph  : " + String(ph); printLine(temp, 0, 10);
       temp = "tss : " + String(tss); printLine(temp, 0, 20);
-      echo(data);
+      echo(rawData);
+      SendTextMessage(number);
       isUpload = true;
       minute = 0;
     }
-    Serial.println(second); 
+    Serial.println(second);
   }
 }
 
@@ -193,16 +220,17 @@ void echo(String data) {
   state = receiving;
   printState();
 
-  String rawData;
+  String resp;
   while (Serial1.available()) {
     char in = Serial1.read();
-    rawData += in;
+    resp += in;
   }
-  Serial.println(rawData);
+  Serial.println(resp);
   state = idle;
 }
 
 float getTSS(byte reg) {
+  mySerial.listen();
   uint8_t check;
   uint32_t result = 0;
   check = node.readHoldingRegisters(reg, 2);
@@ -275,7 +303,143 @@ void printState() {
     case RECEIVING:
       Serial.println("RECEIVING");
       break;
+  }
+}
 
+void updateGSMSerial()
+{
+  delay(500);
+  while (Serial.available())
+  {
+    gsm.write(Serial.read());//Forward what Serial received to Software Serial Port
+  }
+  while (gsm.available())
+  {
+    Serial.write(gsm.read());//Forward what Software Serial received to Serial Port
+  }
+}
+
+void parseData(String data)
+// data format : "1,2,3"
+// parsing data from CSV to array
+{
+  String temp = data;
+  for (int i = 0; i < 3; i++) {
+    int idx = temp.indexOf(',');
+    temp.toCharArray(sensorValue[i], idx + 1);
+    if (idx != -1) {
+      temp.remove(0, idx + 1);
+    }
+  }
+}
+
+void updateGSMData(String tanggal, String jam) {
+  parseData(rawData); // turn data from CSV to array format
+
+  /** fixedData is written like the format as follows
+     SPARING KLHK-1 2018-04-19 08:00 7.2 20.2 30.2 40 50
+     sensorValue in format ["pH","TSS","DEBIT"]
+  */
+  String fixedData = "SPARING UJI-14";
+  fixedData = fixedData + " " + tanggal;
+  fixedData = fixedData + " " + jam;
+  fixedData = fixedData + " " + sensorValue[0] + " -";
+  fixedData = fixedData + " " + sensorValue[1] + " -";
+  fixedData = fixedData + " " + sensorValue[2] + " ";
+  GSMData = fixedData;
+  Serial.println(fixedData);
+}
+
+void SendTextMessage(String number)
+{
+  gsm.listen();// "gsm" serial port is active
+  Serial.println("Sending Text...");
+  gsm.print("AT+CMGF=1\r"); // Set the shield to SMS mode
+  updateGSMSerial();
+  // send sms message, the phone number needs to include the country code e.g. if a U.S. phone number such as (540) 898-5543 then the string must be:
+  // +15408985543
+  String temp = "AT+CMGS=" + number;
+  gsm.println(temp);
+  updateGSMSerial();
+  updateGSMData("2018-04-19", "08:00");
+  gsm.println(GSMData); //the content of the message
+  updateGSMSerial();
+  gsm.print((char)26);//the ASCII code of the ctrl+z is 26 (required according to the datasheet)
+  updateGSMSerial();
+  gsm.println();
+  Serial.println("Text Sent.");
+}
+
+void ConnectGSM() {
+  gsm.println("AT"); //Once the handshake test is successful, it will back to OK
+  waitUntilResponse("OK");
+  char isConnect;
+  do
+  {
+    gsm.println("AT+CREG?"); //Check whether it has registered in the network
+    delay(10);
+    String x;
+    if (gsm.available() > 0)
+    {
+      x = gsm.readString();
+      Serial.print("I received: ");
+      Serial.println(x);
+      isConnect = x.charAt(20);
+      Serial.println(isConnect);
+    }
+  } while (isConnect != '1' && isConnect != '5');
+  gsm.println("AT+CMGF=1"); // Configuring TEXT mode
+  waitUntilResponse("OK");
+
+  gprsConnectionSetup = true;
+} // setupGPRSConnection
+
+void readResponse() {
+  responseGsm = "";
+  while (responseGsm.length() <= 0 || !responseGsm.endsWith("\n"))
+  {
+    tryToRead();
+    if (millis() - lastTimeGsm > maxResponseTime)
+    {
+      return;
+    }
+  }
+} // readResponse
+
+void tryToRead() {
+  while (gsm.available()) {
+    char c = gsm.read();  //gets one byte from serial buffer
+    responseGsm += c; //makes the string readString
+  }
+} // tryToRead
+
+void waitUntilResponse(String resp) {
+  lastTimeGsm = millis();
+  String response = "";
+  String totalResponse = "";
+  while (response.indexOf(resp) < 0 && millis() - lastTimeGsm < maxResponseTime)
+  {
+    readResponse();
+    totalResponse = totalResponse + response;
+    DEBUG_PORT.println(response);
   }
 
-}
+  if (totalResponse.length() <= 0)
+  {
+    DEBUG_PORT.println("NO RESPONSE");
+    if (gprsConnectionSetup == true) {
+      DEBUG_PORT.println("error");
+    }
+  }
+  else if (response.indexOf(resp) < 0)
+  {
+    if (gprsConnectionSetup == true) {
+      DEBUG_PORT.println("error");
+    }
+    DEBUG_PORT.println("UNEXPECTED RESPONSE");
+    DEBUG_PORT.println(totalResponse);
+  } else {
+    DEBUG_PORT.println("SUCCESSFUL");
+  }
+
+} // waitUntilResponse
