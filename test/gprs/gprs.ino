@@ -1,7 +1,8 @@
 #include <SoftwareSerial.h>
 
 //Create software serial object to communicate with SIM800L
-SoftwareSerial mySerial(7, 8); //SIM800L Tx & Rx is connected to Arduino #3 & #2
+SoftwareSerial mySerial(12, 13); //SIM800L Tx & Rx is connected to Arduino #3 & #2
+String number = "\"+6282130310254\"";
 
 void setup()
 {
@@ -18,9 +19,10 @@ void setup()
   updateSerial();
 
   mySerial.println("AT+CMGF=1"); // Configuring TEXT mode
+  delay(2000);
   updateSerial();
 //  mySerial.println("AT+CMGS=\"+6282130310254\"");//change ZZ with country code and xxxxxxxxxxx with phone number to sms +6282130310254  +6285270817607
-  SendTextMessage();
+  SendTextMessage(number);
 //  updateSerial();
 //  mySerial.print("huting"); //text content
 //  updateSerial();
@@ -45,14 +47,15 @@ void updateSerial()
   }
 }
 
-void SendTextMessage()
+void SendTextMessage(String number)
 {
   Serial.println("Sending Text...");
   mySerial.print("AT+CMGF=1\r"); // Set the shield to SMS mode
   updateSerial();
   // send sms message, the phone number needs to include the country code e.g. if a U.S. phone number such as (540) 898-5543 then the string must be:
   // +15408985543
-  mySerial.println("AT+CMGS=\"+6282130310254\"");//+6285222999512
+  String temp = "AT+CMGS=" + number;
+  mySerial.println(temp);
   updateSerial();
   mySerial.println("How are you today???"); //the content of the message
   updateSerial();
