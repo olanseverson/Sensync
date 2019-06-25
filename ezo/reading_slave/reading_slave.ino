@@ -15,7 +15,7 @@
 #include <TFT.h>
 #include <SPI.h>
 
-//==== TFT ====
+//=========== TFT ====================
 // pin : 3.3 52 51 49 48 53 gnd vcc
 // tft 1.8 inch 128x160 pixel
 // pin definition for Arduino MEGA
@@ -29,33 +29,47 @@ TFT TFTscreen = TFT(cs, dc, rst);
 int tftXPos;
 unsigned long tftTime = 0;
 
-//==== TENTACLE SHIELD ====
-#define VCC_PIN  13                                     // VCC alternatif to WiMos VCC 5 V
+//========== TENTACLE SHIELD ==========
 #define rx 11                                          //define what pin rx is going to be
 #define tx 10                                          //define what pin tx is going to be
 #define UPLOAD_TIME 15                                  // period for uploading to server (in minute(s))
-
 SoftwareSerial myserial(rx, tx);                      //define how the soft serial port is going to work
-
 const int s0 = 7;                        //Arduino pin 7 to control pin S0
 const int s1 = 6;                        //Arduino pin 6 to control pin S1
 const int enable_1 = 5;                   //Arduino pin 5 to control pin E on shield 1
 const int enable_2 = 4;                  //Arduino pin 4 to control pin E on shield 2
-
 static int countSec;                       //delay(s) for sending data to WeMOS (uploading to inet)
 unsigned long serverTime = 0 ;
-
-String inputstring = "";                              //a string to hold incoming data from the PC
-String sensorstring = "";                             //a string to hold the data from the Atlas Scientific product
-boolean input_string_complete = false;                //have we received all the data from the PC
 boolean sensor_string_complete = false;               //have we received all the data from the Atlas Scientific product
-float DO;                                             //used to hold a floating point number that is the DO
 int channel;                             //INT pointer for channel switching - 0-7 serial, 8-127 I2C addresses
+//=====================================
 
-char sensordata[32];                     //A 30 byte character array to hold incoming data from the sensors
-String stamp_type;                       // hold the name / type of the stamp
-char stamp_version[4];                   // hold the version of the stamp
-boolean answerReceived;                  // com-functions store here if a connection-attempt was successful
+//============== TIMING ===============
+#define TICK 1000 // in ms
+#define UPLOAD_TIME   3
+#define UPDATE_TIME   1
+int second = 0;        // second counter
+int minute = 0;        // second counter
+long timer = 0;  // storage for timer to upload
+bool isUpdate = false;
+bool isUpload = false;
+//======================================
+
+//================ WeMos ===============
+#define Idle 0
+#define SENDING 1
+#define WAITING 2
+#define RECEIVING 3
+
+enum upload_status {
+  idle = Idle,
+  sending = SENDING,
+  waiting = WAITING,
+  receiving = RECEIVING,
+};
+
+enum upload_status state = idle;
+//======================================
 
 void setup() {                                        //set up the hardware
   // == SENSOR SETTING ==
@@ -63,17 +77,19 @@ void setup() {                                        //set up the hardware
   pinMode(s0, OUTPUT);                   //Set the digital pin as output.
   pinMode(enable_1, OUTPUT);             //Set the digital pin as output.
   pinMode(enable_2, OUTPUT);             //Set the digital pin as output.
-  pinMode(VCC_PIN, OUTPUT);             //Set the digital pin as output.
 
-  digitalWrite(VCC_PIN, HIGH);
-  Serial.begin(9600);                                 //set baud rate for the hardware serial port_0 to 9600
+  //debugging purposes
+  Serial.begin(115200);                                 //set baud rate for the hardware serial port_0 to 9600
+
+  // Tentacle Shield comm
   myserial.begin(9600);                               //set baud rate for the software serial port to 9600
+
+  // WeMos communication
   Serial1.begin(9600);                                //set baud rate for the hardware serial port_1 to 9600
-  inputstring.reserve(10);                            //set aside some bytes for receiving data from the PC
-  sensorstring.reserve(30);                           //set aside some bytes for receiving data from Atlas Scientific product
+
   countSec = 0;
 
-  // ==TFT SETTING ==
+  // ===========TFT SETTING ============
   //initialize the library
   TFTscreen.begin();
 
@@ -84,42 +100,89 @@ void setup() {                                        //set up the hardware
   TFTscreen.setRotation(2);
   TFTscreen.stroke(255, 255, 255);
   TFTscreen.text("Starting .... ", 0, 0);
+  //====================================
+
+  //WAITING FOR WEMOS TO CONNECT TO INTERNET
+  while (!Serial1.available()) { // empty the rx buffer
+    Serial.print(".");
+    delay(500);
+  }
 }
+
 //=======================================================================
 //                    Main Program Loop
 //=======================================================================
 void loop() {                                         //here we go...
-  if ((millis() - serverTime) > 1000) { // increase every 1 second
-    if (countSec == UPLOAD_TIME * 60 ) {
-      countSec = 0;
-      String allData = getAllData();
-      Serial1.println(allData);
-      Serial.println(allData);
-      delay(1000);
-      printToTFT(allData);
+  String data = "";
+  if (millis() - timer > TICK) {
+    second++; //increase every TICK millisecond
+    timer = millis();
+    if (second == 60) {
+      second = 0;
+      minute++;
+      Serial.println(minute);
+      isUpload = false;
+      isUpdate = false;
     }
-    serverTime = millis();
-    countSec++;
-    Serial.println(countSec);
+
+    if ((minute % UPDATE_TIME == 0) && minute != 0 && !isUpdate) { // update data
+      data = getAllData();
+      Serial.println(data);
+      Serial1.print("0"); // to ensure that communication is active
+      isUpdate = true;
+    }
+
+    if ((minute % UPLOAD_TIME == 0) && minute != 0 && !isUpload) { //send to WeMos for uploading
+      echo(data);
+      isUpload = true;
+      minute = 0;
+    }
+    Serial.println(second);
   }
 }
 //=======================================================================
 
 
-String getAllData() {
+void echo(String data) {
+  while (Serial1.available()) { // empty the rx buffer
+    Serial1.read();
+  }
+  printState();
+  Serial1.print(data);
+  Serial1.flush();
+  state = sending;
+  printState();
+
+  while (!Serial1.available()) {
+    state = waiting;
+    printState();
+  }
+
+  state = receiving;
+  printState();
+
+  String rawData;
+  while (Serial1.available()) {
+    char in = Serial1.read();
+    rawData += in;
+  }
+  Serial.println(rawData);
+  state = idle;
+}
+String getAllData() 
+//OUTPUT(e.g.): "1,2,3,4,5,6,7,"
+{
   String allData = "";
-  TFTscreen.background(0, 0, 0); // clear the screen
   char val[7][10] = {"", "", "", "", "", "", ""}; // save the  sensor reading
-  TFTscreen.text("DATA :", 0, 0);
   int count = 0;
   for (int i = 0; i < 4; i++)
   {
     channel = i;
     change_serial_mux_channel();
-//    Serial.print(info(requestToSensor("i")) + " : ");     // FOR DEBUGGING
+    //    Serial.print(info(requestToSensor("i")) + " : ");     // FOR DEBUGGING
     String value = readUntil('*', requestToSensor("r"));
     value.trim();
-//    Serial.println(value);                                //FOR DEBUGGING
+    //    Serial.println(value);                                //FOR DEBUGGING
     allData += value + ",";
   }
   return allData;
@@ -147,7 +210,8 @@ void printToTFT(String data)
 
 
 String requestToSensor(String inputstring) {
-  sensorstring = "";                                //clear the string
+  String sensorstring = "";                                //clear the string
+  sensorstring.reserve(30);                           //set aside some bytes for receiving data from Atlas Scientific product
   myserial.print(inputstring);                      //send that string to the Atlas Scientific product
   myserial.print('\r');                             //add a <CR> to the end of the string
   delay(1000);
@@ -269,4 +333,21 @@ String readUntil(char delimiter, String input) {
     data.remove(i);
   }
   return data;
+}
+
+void printState() {
+  switch (state) {
+    case Idle:
+      Serial.println("IDLE");
+      break;
+    case SENDING:
+      Serial.println("SENDING");
+      break;
+    case WAITING:
+      Serial.println("WAITING");
+      break;
+    case RECEIVING:
+      Serial.println("RECEIVING");
+      break;
+  }
 }
