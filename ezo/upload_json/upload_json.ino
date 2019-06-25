@@ -93,7 +93,7 @@ String tanggal, jam;
 /**======================================================= SETUP ==================================================
 */
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial) {
     ;  // wait for serial port to initialize
   }
@@ -122,24 +122,41 @@ void setup() {
 /**==============================================================LOOP===========================================
 */
 void loop() {
-//  while (!ardSerial.available()) {
-//    delay(100);
-//    state = idle;
-//    printState();
-//    ardSerial.listen();
-//  }
-//  updateSerial();
+  updateSerial();
+  updateTerminal();
+}
 
-    while (!Serial.available()) {
-      delay(100);
-      state = idle;
+
+void updateSerial()
+{
+  if (ardSerial.available())
+  {
+    delay(100);
+    rawData = "";
+    state = receiving;
+    printState();
+    while (ardSerial.available()) {
+      char in = ardSerial.read();
+      rawData += in;
+    }
+    state = waiting;
+    printState();
+    Serial.println(rawData);//Forward what Software Serial received to Serial Port
+
+    if (rawData != "-") {
+      //      rawData.remove(0, 1); // remove first char
+      parseData(rawData, ",");
+      uploadToMainServer();
+      ardSerial.println(statusCode);
+      state = sending;
       printState();
     }
-    updateTerminal();
+    state = idle;
+    printState();
+  }
 }
 
 void updateTerminal() {
-  delay(100);
   if (Serial.available())
   {
     rawData = "";
@@ -158,33 +175,6 @@ void updateTerminal() {
       parseData(rawData, ",");
       uploadToMainServer();
       //      ardSerial.println(statusCode);
-      state = sending;
-      printState();
-    }
-  }
-}
-void updateSerial()
-{
-  Serial.println("here");
-  delay(100);
-  if (ardSerial.available())
-  {
-    rawData = "";
-    state = receiving;
-    printState();
-    while (ardSerial.available()) {
-      char in = ardSerial.read();
-      rawData += in;
-    }
-    state = waiting;
-    printState();
-    Serial.println(rawData);//Forward what Software Serial received to Serial Port
-
-    if (rawData != "0") {
-      rawData.remove(0, 1); // remove first char
-      parseData(rawData, ",");
-      uploadToMainServer();
-      ardSerial.println(statusCode);
       state = sending;
       printState();
     }
@@ -216,9 +206,10 @@ bool sendRequest(const char* host, bool IsSparing) {
   // Add the "location" object
   JsonObject data = doc.createNestedObject("data");
   data["IDStasiun"] = "UJI-14";
+  //  data["Tanggal"] = "2019-05-06"; // must update tanggal
   data["Tanggal"] = tanggal; // must update tanggal
   data["Jam"] = jam;
-//  data["Jam"] = String(random(0, 23)) + ":" + String(random(0, 59)) + ":" + String(random(0, 59));
+  //  data["Jam"] = String(random(0, 23)) + ":" + String(random(0, 59)) + ":" + String(random(0, 59));
 
   if (IsSparing) { // for sparing
     resource = "/onlimo/uji/connect/uji_data_sparing";
@@ -455,7 +446,7 @@ void parseData(String rawData, String delimiter)
   Serial.println(token);
   Serial.println(temp);
 
-  //update tanggal 
+  //update tanggal
   pos = temp.indexOf(delimiter);
   tanggal = temp.substring(0, pos);  // copy string from index [0..pos]
   temp.remove(0, pos + delimiter.length()); // remove string from index [0..pos]

@@ -43,13 +43,14 @@ unsigned long serverTime = 0 ;
 boolean sensor_string_complete = false;               //have we received all the data from the Atlas Scientific product
 int channel;                             //INT pointer for channel switching - 0-7 serial, 8-127 I2C addresses
 String rawData = "";
+
 // store sensorValue in format "pH", "DO", "COND", "TDS", "SALT", "SWSG", "TEMP"
 char sensorValue[7][10] = {"", "", "", "", "", "", ""};
 //=====================================
 
 //============== TIMING ===============
 #define TICK 1000 // in ms
-#define UPLOAD_TIME   3
+#define UPLOAD_TIME   10
 #define UPDATE_TIME   1
 int second = 0;        // second counter
 int minute = 0;        // second counter
@@ -85,6 +86,7 @@ boolean gprsConnectionSetup = false;
 static long maxResponseTime = 5000;
 unsigned long lastTimeGsm = 0;
 String responseGsm = "";
+String jam, tanggal;
 //======================================
 
 void setup() {                                        //set up the hardware
@@ -108,11 +110,6 @@ void setup() {                                        //set up the hardware
   // GSM communication
   gsm.begin(9600);                                //set baud rate for the hardware serial port_1 to 9600
 
-
-  //WAITING FOR GSM TO CONNECTED
-  ConnectGSM();
-  Serial.println("GSM Connected");
-
   // ===========TFT SETTING ============
   //initialize the library
   TFTscreen.begin();
@@ -131,7 +128,7 @@ void setup() {                                        //set up the hardware
     delay(500);
   }
   Serial.println("Connect to Wifi");
-
+  rawData.reserve(75);
 }
 
 //=======================================================================
@@ -151,8 +148,9 @@ void loop() {                                         //here we go...
 
     if ((minute % UPDATE_TIME == 0) && minute != 0 && !isUpdate) { // update data
       rawData = getAllData(); // get rawData in CSV format (e.g. "1,2,3,4,5,6,7,")
+      Serial1.print("-"); // to ensure that communication is active
+      Serial1.flush();
       Serial.println(rawData);
-      Serial1.print("0"); // to ensure that communication is active
       isUpdate = true;
     }
 
@@ -166,14 +164,28 @@ void loop() {                                         //here we go...
   }
 }
 //=======================================================================
-
+//void loop() {
+//  String rawData = "";
+//  bool isSparing = false;
+//  if (isSparing) {
+//    rawData = "0sp,1,2,3,";
+//  } else {
+//    rawData = "0ol,1,2,3,4,5,6,7,";
+//  }
+//  echo(rawData);
+//  delay(60000);
+//}
 
 void echo(String data) {
   while (Serial1.available()) { // empty the rx buffer
     Serial1.read();
   }
   printState();
-  Serial1.print(data);
+  jam = String(random(0, 23)) + ":" + String(random(0, 59)) + ":" + String(random(0, 59)) + ",";
+  tanggal = "2019-05-06";
+  String test = "ol," + tanggal + "," + jam + data; // FOR ONLIMO, ADD "SP" AS IDENTIFIER
+  Serial.println(test);
+  Serial1.print(test);
   Serial1.flush();
   state = sending;
   printState();
@@ -186,14 +198,16 @@ void echo(String data) {
   state = receiving;
   printState();
 
-  String response;
+  String resp = "";
   while (Serial1.available()) {
     char in = Serial1.read();
-    response += in;
+    resp += in;
+    delay(10);
   }
-  Serial.println(response);
+  Serial.println(resp);
   state = idle;
 }
+
 String getAllData()
 //OUTPUT(e.g.): "1,2,3,4,5,6,7,"
 {
@@ -412,6 +426,9 @@ void updateGSMData(String tanggal, String jam) {
 void SendTextMessage(String number)
 {
   gsm.listen();// "gsm" serial port is active
+  //WAITING FOR GSM TO CONNECTED
+//  ConnectGSM();
+  Serial.println("GSM Connected");
   Serial.println("Sending Text...");
   gsm.print("AT+CMGF=1\r"); // Set the shield to SMS mode
   updateGSMSerial();
@@ -420,7 +437,7 @@ void SendTextMessage(String number)
   String temp = "AT+CMGS=" + number;
   gsm.println(temp);
   updateGSMSerial();
-  updateGSMData("2018-04-19", "08:00");
+  updateGSMData(tanggal, jam);
   gsm.println(GSMData); //the content of the message
   updateGSMSerial();
   gsm.print((char)26);//the ASCII code of the ctrl+z is 26 (required according to the datasheet)
@@ -430,12 +447,14 @@ void SendTextMessage(String number)
 }
 
 void ConnectGSM() {
+  gsm.listen();
   gsm.println("AT"); //Once the handshake test is successful, it will back to OK
   waitUntilResponse("OK");
   char isConnect;
   do
   {
     gsm.println("AT+CREG?"); //Check whether it has registered in the network
+    gsm.flush();
     delay(10);
     String x;
     if (gsm.available() > 0)
