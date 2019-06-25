@@ -1,13 +1,13 @@
 /*
-   Rui Santos
-   Complete Project Details https://randomnerdtutorials.com
-   Based on the Arduino Ethernet Web Client Example
-   and on the sketch "Sample Arduino Json Web Client" of the Arduino JSON library by Benoit Blanchon (bblanchon.github.io/ArduinoJson)
+   https://randomnerdtutorials.com/decoding-and-encoding-json-with-arduino-or-esp8266/
 */
+#include <ArduinoJson.h> // download ArduinoJson v6 from Arduino Library Manager (go to https://arduinojson.org/v6/doc/)
 
-#include <ArduinoJson.h>
-#include <ESP8266WiFi.h>
+#include <ESP8266WiFi.h>/
 #include <WiFiClient.h>
+
+#include <ESP8266WebServer.h>
+#include <ESP8266HTTPClient.h>
 
 WiFiClient client;
 
@@ -16,7 +16,7 @@ const char* ssid = "Get Sensync";
 const char* password = "makanminggu12";
 
 
-// Replace with your Raspberry Pi IP address
+// Replace with your server
 const char* server = "ppkl.menlhk.go.id";
 
 // Replace with your server port number frequently port 80 - with Node-RED you need to use port 1880
@@ -27,6 +27,8 @@ const char* resource = "/onlimo/uji/connect/uji_data_onlimo";
 
 const unsigned long HTTP_TIMEOUT = 10000;  // max respone time from server
 const size_t MAX_CONTENT_SIZE = 512;       // max size of the HTTP response
+
+int data_uid = 0;                          // id from server
 
 
 // ARDUINO entry point #1: runs once when you press reset or power the board
@@ -53,17 +55,26 @@ void setup() {
   Serial.println("");
   Serial.println("WiFi connected");
   delay(1000);
-}
 
-// ARDUINO entry point #2: runs over and over again forever
-void loop() {
   if (connect(server, portNumber)) {
     if (sendRequest(server, resource) && skipResponseHeaders()) {
       Serial.print("HTTP POST request finished.");
     }
+    getResponse();
   }
   disconnect();
   wait();
+}
+
+// ARDUINO entry point #2: runs over and over again forever
+void loop() {
+  //  if (connect(server, portNumber)) {
+  //    if (sendRequest(server, resource) && skipResponseHeaders()) {
+  //      Serial.print("HTTP POST request finished.");
+  //    }
+  //  }
+  //  disconnect();
+  //  wait();
 }
 
 // Open connection to the HTTP server (Node-RED running on Raspberry Pi)
@@ -80,22 +91,23 @@ bool connect(const char* hostName, int portNumber) {
 // Send the HTTP POST request to the server
 bool sendRequest(const char* host, const char* resource) {
   //================= ALLOCATE JSON DOCUMENT ======================
-  // Inside the brackets, 200 is the RAM allocated to this document.
+  // Inside the brackets, [capacity] is the RAM allocated to this document.
   // Don't forget to change this value to match your requirement.
   // Use arduinojson.org/v6/assistant to compute the capacity.
-  const int capacity = JSON_OBJECT_SIZE(3) + JSON_OBJECT_SIZE(18);
+//  const int capacity = JSON_OBJECT_SIZE(3) + JSON_OBJECT_SIZE(18); 
+  const int capacity = 600; // edit this capacity
   StaticJsonDocument<capacity> doc;
 
 
   // Add the "location" object
   JsonObject data = doc.createNestedObject("data");
   data["IDStasiun"] = "UJI-14";
-  data["Tanggal"] = "2019-05-06";
-  data["Jam"] = "14:31:00";
-  data["Suhu" ] = 30;
-  data["DHL"] = 12;
-  data["TDS"] = 13;
-  data["Salinitas"] = 14.12;
+  data["Tanggal"] = "2019-05-12";
+  data["Jam"] = "17:21:27";
+  data["Suhu" ] = 32;
+  data["DHL"] = 1.3;
+  data["TDS"] = 1.2;
+  data["Salinitas"] = 21.2;
   data["DO"] = 1.86;
   data["PH"] = 7.6;
   data["Turbidity"] = 17;
@@ -163,14 +175,14 @@ bool sendRequest(const char* host, const char* resource) {
   //Send the HTTP headers
   client.print("Host: ");
   client.println(host);
-  client.println("Connection: close");
+  //  client.println("Connection: close");/
   client.print("Content-Length: ");
   client.println(measureJson(doc));
   client.println("Content-Type: application/json");
 
   // Terminate headers with a blank line
   client.println();
-  
+
   // Send JSON document in body
   serializeJson(doc, client);
 
@@ -201,4 +213,53 @@ void disconnect() {
 void wait() {
   Serial.println("Wait 60 seconds");
   delay(60000);
+}
+
+void getResponse() {
+  long interval = 2000;
+  unsigned long currentMillis = millis(), previousMillis = millis();
+
+  while (!client.available()) {
+    if ( (currentMillis - previousMillis) > interval ) {
+      Serial.println("Timeout");
+    }
+    currentMillis = millis();
+  }
+
+  char status[100] = {0};
+  client.readBytesUntil('\r', status, sizeof(status)); // skip a line
+  client.readBytesUntil('\r', status, sizeof(status)); // get the response in json format
+  String response = status;
+  response.trim();
+  //  Serial.println(response);
+
+  if (response.indexOf("200") == -1) { // transmission didn`t succeed
+    Serial.println("Uploading Error");
+    return;
+  }
+
+  // Allocate the JSON document
+  // Don't forget to change this value to match your JSON document.
+  // Use arduinojson.org/v6/assistant to compute the capacity.
+  StaticJsonDocument<200> doc;
+
+  // Deserialize the JSON document
+  DeserializationError error = deserializeJson(doc, response);
+
+  // Test if parsing succeeds.
+  if (error) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(error.c_str());
+    return;
+  }
+
+  serializeJsonPretty(doc, Serial); // print json data in pretty format
+  // extract the value;
+  data_uid = doc["rows"]["data_uid"];
+  const int statusCode = doc["status"]["statusCode"];
+  const char* statusDesc = doc["status"]["statusDesc"];
+  
+  Serial.println(data_uid);
+  Serial.println(statusCode);
+  Serial.println(statusDesc);
 }
