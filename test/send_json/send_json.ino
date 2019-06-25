@@ -23,13 +23,41 @@ const char* server = "ppkl.menlhk.go.id";
 int portNumber = 80;
 
 // Replace with your unique URL resource
-const char* resource = "/onlimo/uji/connect/uji_data_onlimo";
+const char* resource = "";
 
 const unsigned long HTTP_TIMEOUT = 10000;  // max respone time from server
 const size_t MAX_CONTENT_SIZE = 512;       // max size of the HTTP response
 
 int data_uid = 0;                          // id from server
 
+
+// data for JSON
+typedef struct sparing {
+  String ph;
+  String cod;
+  String tss;
+  String nh3n;
+  String debit;
+} Sparing;
+
+typedef struct onlimo {
+  String suhu;
+  String dhl;
+  String tds;
+  String salinitas;
+  String DO;
+  String ph;
+  String turbidity;
+  String kedalaman;
+  String swsg;
+  String nitrat;
+  String nitrit;
+  String amonia;
+  String orp;
+  String cod;
+  String bod;
+} Onlimo;
+Onlimo onlimo;
 
 // ARDUINO entry point #1: runs once when you press reset or power the board
 void setup() {
@@ -57,7 +85,7 @@ void setup() {
   delay(1000);
 
   if (connect(server, portNumber)) {
-    if (sendRequest(server, resource) && skipResponseHeaders()) {
+    if (sendRequest(server, false) && skipResponseHeaders()) {
       Serial.print("HTTP POST request finished.");
     }
     getResponse();
@@ -89,12 +117,12 @@ bool connect(const char* hostName, int portNumber) {
 }
 
 // Send the HTTP POST request to the server
-bool sendRequest(const char* host, const char* resource) {
+bool sendRequest(const char* host, bool IsSparing) {
   //================= ALLOCATE JSON DOCUMENT ======================
   // Inside the brackets, [capacity] is the RAM allocated to this document.
   // Don't forget to change this value to match your requirement.
   // Use arduinojson.org/v6/assistant to compute the capacity.
-//  const int capacity = JSON_OBJECT_SIZE(3) + JSON_OBJECT_SIZE(18); 
+  //  const int capacity = JSON_OBJECT_SIZE(3) + JSON_OBJECT_SIZE(18);
   const int capacity = 600; // edit this capacity
   StaticJsonDocument<capacity> doc;
 
@@ -102,24 +130,36 @@ bool sendRequest(const char* host, const char* resource) {
   // Add the "location" object
   JsonObject data = doc.createNestedObject("data");
   data["IDStasiun"] = "UJI-14";
-  data["Tanggal"] = "2019-05-12";
-  data["Jam"] = "17:21:27";
-  data["Suhu" ] = 32;
-  data["DHL"] = 1.3;
-  data["TDS"] = 1.2;
-  data["Salinitas"] = 21.2;
-  data["DO"] = 1.86;
-  data["PH"] = 7.6;
-  data["Turbidity"] = 17;
-  data["Kedalaman"] = 18;
-  data["SwSG"] = 19;
-  data["Nitrat"] = 20;
-  data["Nitrit"] = 21;
-  data["Amonia"] = 22;
-  data["ORP"] = 23;
-  data["COD"] = 24;
-  data["BOD"] = 25;
+  data["Tanggal"] = "2019-05-13"; // must update tanggal
+  data["Jam"] = "17:21:31";       // must update jam
 
+  if (IsSparing) { // for sparing
+    resource = "/onlimo/uji/connect/uji_data_sparing";
+    Sparing sparing = updateSparing();
+    data["ph"] = sparing.ph;
+    data["cod"] = sparing.cod;
+    data["tss"] = sparing.tss;
+    data["nh3n"] = sparing.nh3n;
+    data["debit"] = sparing.debit;
+  } else { // for onlimo
+    resource = "/onlimo/uji/connect/uji_data_onlimo";
+    Onlimo onlimo = updateOnlimo();
+    data["Suhu" ] = onlimo.suhu;
+    data["DHL"] = onlimo.dhl;
+    data["TDS"] = onlimo.tds;
+    data["Salinitas"] = onlimo.salinitas;
+    data["DO"] = onlimo.DO;
+    data["PH"] = onlimo.ph;
+    data["Turbidity"] = onlimo.turbidity;
+    data["Kedalaman"] = onlimo.kedalaman;
+    data["SwSG"] = onlimo.swsg;
+    data["Nitrat"] = onlimo.nitrat;
+    data["Nitrit"] = onlimo.nitrit;
+    data["Amonia"] = onlimo.amonia;
+    data["ORP"] = onlimo.orp;
+    data["COD"] = onlimo.cod;
+    data["BOD"] = onlimo.bod;
+  }
   // Add members
   doc["apikey"] = "uji@sensorteknologiindonesia";
   doc["apisecret"] = "fa02c613-c5e9-4534-b53e-259e83c58441";
@@ -141,28 +181,14 @@ bool sendRequest(const char* host, const char* resource) {
   //  "data": {
   //    "IDStasiun": "UJI-14",
   //    "Tanggal": "2019-05-06",
-  //    "Jam": "14:00:00",
-  //    "Suhu": 30,
-  //    "DHL": 12,
-  //    "TDS": 13,
-  //    "Salinitas": 14.12,
-  //    "DO": 1.86,
-  //    "PH": 7.6,
-  //    "Turbidity": 17,
-  //    "Kedalaman": 18,
-  //    "SwSG": 19,
-  //    "Nitrat": 20,
-  //    "Nitrit": 21,
-  //    "Amonia": 22,
-  //    "ORP": 23,
-  //    "COD": 24,
-  //    "BOD": 25
+  //    .....
+  //     .... 
   //  },
   //  "apikey": "uji@sensorteknologiindonesia",
   //  "apisecret": "fa02c613-c5e9-4534-b53e-259e83c58441"
   //}
   //===========================================================
-
+  Serial.println();
 
   Serial.print("POST ");
   Serial.println(resource);
@@ -231,7 +257,7 @@ void getResponse() {
   client.readBytesUntil('\r', status, sizeof(status)); // get the response in json format
   String response = status;
   response.trim();
-  //  Serial.println(response);
+  Serial.println(response);
 
   if (response.indexOf("200") == -1) { // transmission didn`t succeed
     Serial.println("Uploading Error");
@@ -258,8 +284,41 @@ void getResponse() {
   data_uid = doc["rows"]["data_uid"];
   const int statusCode = doc["status"]["statusCode"];
   const char* statusDesc = doc["status"]["statusDesc"];
-  
+
   Serial.println(data_uid);
   Serial.println(statusCode);
   Serial.println(statusDesc);
+}
+
+
+Sparing updateSparing() {
+  Sparing sparing; // Struct of string
+  sparing.ph = "8";
+  sparing.cod = "12";
+  sparing.tss = "13";
+  sparing.nh3n = "14.12";
+  sparing.debit = "1000.86";
+  return sparing;
+}
+
+Onlimo updateOnlimo() {
+  Onlimo onlimo; // Struct of string
+
+  onlimo.suhu ="1";
+  onlimo.dhl = "2";
+  onlimo.tds = "3";
+  onlimo.salinitas = "4";
+  onlimo.DO = "5";
+  onlimo.ph = "6";
+  onlimo.turbidity = "7";
+  onlimo.kedalaman = "8";
+  onlimo.swsg = "9";
+  onlimo.nitrat = "10";
+  onlimo.nitrit = "11";
+  onlimo.amonia = "12";
+  onlimo.orp = "13";
+  onlimo.cod = "14";
+  onlimo.bod = "15";
+
+  return onlimo;
 }
