@@ -121,14 +121,46 @@ void setup() {
 /**==============================================================LOOP===========================================
 */
 void loop() {
-  while (!ardSerial.available()) {
+//  while (!ardSerial.available()) {
+//    delay(100);
+//    state = idle;
+//    printState();
+//  }
+//  updateSerial();
+
+  while (!Serial.available()) {
     delay(100);
     state = idle;
     printState();
   }
-  updateSerial();
+  updateTerminal();
 }
 
+void updateTerminal(){
+  delay(100);
+  if (Serial.available())
+  {
+    rawData = "";
+    state = receiving;
+    printState();
+    while (Serial.available()) {
+      char in = Serial.read();
+      rawData += in;
+    }
+    state = waiting;
+    printState();
+    Serial.println(rawData);//Forward what Software Serial received to Serial Port
+
+    if (rawData != "0") {
+      rawData.remove(0, 1); // remove first char
+      parseData(rawData, ",");
+      uploadToMainServer();
+//      ardSerial.println(statusCode);
+      state = sending;
+      printState();
+    }
+  }
+}
 void updateSerial()
 {
   Serial.println("here");
