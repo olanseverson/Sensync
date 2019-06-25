@@ -89,6 +89,7 @@ String onlimo_param[7] = {"", "", "", "", "", "", ""};
 String sparing_param[3] = {"", "", ""};
 
 bool isSparing;
+String tanggal, jam;
 /**======================================================= SETUP ==================================================
 */
 void setup() {
@@ -125,18 +126,19 @@ void loop() {
 //    delay(100);
 //    state = idle;
 //    printState();
+//    ardSerial.listen();
 //  }
 //  updateSerial();
 
-  while (!Serial.available()) {
-    delay(100);
-    state = idle;
-    printState();
-  }
-  updateTerminal();
+    while (!Serial.available()) {
+      delay(100);
+      state = idle;
+      printState();
+    }
+    updateTerminal();
 }
 
-void updateTerminal(){
+void updateTerminal() {
   delay(100);
   if (Serial.available())
   {
@@ -155,7 +157,7 @@ void updateTerminal(){
       rawData.remove(0, 1); // remove first char
       parseData(rawData, ",");
       uploadToMainServer();
-//      ardSerial.println(statusCode);
+      //      ardSerial.println(statusCode);
       state = sending;
       printState();
     }
@@ -214,9 +216,9 @@ bool sendRequest(const char* host, bool IsSparing) {
   // Add the "location" object
   JsonObject data = doc.createNestedObject("data");
   data["IDStasiun"] = "UJI-14";
-  data["Tanggal"] = "2019-05-13"; // must update tanggal
-  data["Jam"] = String(random(0, 23)) + ":" + String(random(0, 59)) + ":" + String(random(0, 59));
-  //  data["Jam"] = "17:21:31";       // must update jam
+  data["Tanggal"] = tanggal; // must update tanggal
+  data["Jam"] = jam;
+//  data["Jam"] = String(random(0, 23)) + ":" + String(random(0, 59)) + ":" + String(random(0, 59));
 
   if (IsSparing) { // for sparing
     resource = "/onlimo/uji/connect/uji_data_sparing";
@@ -452,6 +454,17 @@ void parseData(String rawData, String delimiter)
   temp.remove(0, pos + delimiter.length()); // remove string from index [0..pos]
   Serial.println(token);
   Serial.println(temp);
+
+  //update tanggal 
+  pos = temp.indexOf(delimiter);
+  tanggal = temp.substring(0, pos);  // copy string from index [0..pos]
+  temp.remove(0, pos + delimiter.length()); // remove string from index [0..pos]
+
+  //update jam
+  pos = temp.indexOf(delimiter);
+  jam = temp.substring(0, pos);  // copy string from index [0..pos]
+  temp.remove(0, pos + delimiter.length()); // remove string from index [0..pos]
+
   if (token.indexOf("sp") != -1) { // if data come from sparing sensor
     isSparing = true;
     while ( (pos = temp.indexOf(delimiter)) != -1) {
