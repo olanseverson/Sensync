@@ -40,6 +40,8 @@ enum upload_status {
 enum upload_status state = idle;
 //======================================
 
+
+String tanggal, jam;
 void setup() {
   pinMode(LED_PIN, OUTPUT);
   Serial.begin(115200);
@@ -69,20 +71,16 @@ void setup() {
 //                    Main Program Loop
 //=======================================================================
 void loop() {
-  while (!ardSerial.available()) {
-    delay(100);
-    state = idle;
-    printState();
-  }
   updateSerial();
+  updateTerminal();
 }
 //=======================================================================
 
 void updateSerial()
 {
-  delay(100);
   if (ardSerial.available())
   {
+    delay(100);
     rawData = "";
     state = receiving;
     printState();
@@ -94,9 +92,8 @@ void updateSerial()
     printState();
     Serial.println(rawData);//Forward what Software Serial received to Serial Port
 
-    if (rawData != "0") {
-      rawData.remove(0,1);
-      String data = parseData(rawData, ",", false);
+    if (rawData != "-") {
+      String data = parseData(rawData, ",", false);// rawData e.g. : 2019-05-06,17:40:30,1,2,3,4,5,6,7,
       state = sending;
       printState();
       Serial.println(data);
@@ -105,13 +102,53 @@ void updateSerial()
   }
 }
 
-String parseData(String rawData, String delimiter, bool isToThingspeak) {
+void updateTerminal() {
+  if (Serial.available())
+  {
+    delay(100);
+    rawData = "";
+    state = receiving;
+    printState();
+    while (Serial.available()) {
+      char in = Serial.read();
+      rawData += in;
+    }
+    state = waiting;
+    printState();
+    Serial.println(rawData);//Forward what Software Serial received to Serial Port
+
+    if (rawData != "0") {
+      String data = parseData(rawData, ",", false);
+      state = sending;
+      printState();
+      Serial.println(data);
+      uploadToServer(data);
+    }
+    state = idle;
+    printState();
+  }
+}
+
+String parseData(String rawData, String delimiter, bool isToThingspeak) 
+// rawData e.g. : 2019-05-06,17:40:30,1,2,3,4,5,6,7,
+{
   String temp = rawData; //copy rawData so rawData is not disappear
   char count = '1';
   int param_cnt = 0;
   String outputData = ""; // data to be returned
   int pos = 0;
   String token;
+
+  //update tanggal
+  pos = temp.indexOf(delimiter);
+  tanggal = temp.substring(0, pos);  // copy string from index [0..pos]
+  temp.remove(0, pos + delimiter.length()); // remove string from index [0..pos]
+
+  //update jam
+  pos = temp.indexOf(delimiter);
+  jam = temp.substring(0, pos);  // copy string from index [0..pos]
+  temp.remove(0, pos + delimiter.length()); // remove string from index [0..pos]
+
   while ( (pos = temp.indexOf(delimiter)) != -1) {
     token = temp.substring(0, pos);  // copy string from index 0 to pos
     if (isToThingspeak) {

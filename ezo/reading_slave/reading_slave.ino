@@ -50,7 +50,7 @@ char sensorValue[7][10] = {"", "", "", "", "", "", ""};
 
 //============== TIMING ===============
 #define TICK 1000 // in ms
-#define UPLOAD_TIME   10
+#define UPLOAD_TIME   15
 #define UPDATE_TIME   1
 int second = 0;        // second counter
 int minute = 0;        // second counter
@@ -86,9 +86,25 @@ boolean gprsConnectionSetup = false;
 static long maxResponseTime = 5000;
 unsigned long lastTimeGsm = 0;
 String responseGsm = "";
-String jam, tanggal;
 //======================================
 
+//======================= RTC 1307 =============
+#include <Wire.h>
+const int DS1307 = 0x68; // Address of DS1307 see data sheets
+const char* days[] =
+{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+const char* months[] =
+{"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"};
+// Initializes all values:
+byte sec = 0;
+byte min = 0;
+byte hour = 0;
+byte weekday = 0;
+byte monthday = 0;
+byte month = 0;
+byte year = 0;
+String jam, tanggal;
+//======================================
 void setup() {                                        //set up the hardware
   // == SENSOR SETTING ==
   pinMode(s1, OUTPUT);                   //Set the digital pin as output.
@@ -107,6 +123,15 @@ void setup() {                                        //set up the hardware
 
   countSec = 0;
 
+  //==================== RTC setup ===================
+  Wire.begin();
+  if (! rtc_isrunning())
+    Serial.println(F("Unable to sync with the RTC"));
+  else
+    Serial.println(F("RTC has set the system time"));
+  //=================================================
+  printTime();
+
   // GSM communication
   gsm.begin(9600);                                //set baud rate for the hardware serial port_1 to 9600
 
@@ -117,7 +142,7 @@ void setup() {                                        //set up the hardware
   TFTscreen.background(0, 0, 0);
   //set the text size
   TFTscreen.setTextSize(1);
-  TFTscreen.setRotation(2);
+  TFTscreen.setRotation(1);
   TFTscreen.stroke(255, 255, 255);
   TFTscreen.text("Starting .... ", 0, 0);
   //====================================
@@ -181,9 +206,10 @@ void echo(String data) {
     Serial1.read();
   }
   printState();
-  jam = String(random(0, 23)) + ":" + String(random(0, 59)) + ":" + String(random(0, 59)) + ",";
-  tanggal = "2019-05-06";
-  String test = "ol," + tanggal + "," + jam + data; // FOR ONLIMO, ADD "SP" AS IDENTIFIER
+//  jam = String(random(0, 23)) + ":" + String(random(0, 59)) + ":" + String(random(0, 59));
+//  tanggal = "2019-05-06";
+  readTime();
+  String test = tanggal + "," + jam + "," + data;
   Serial.println(test);
   Serial1.print(test);
   Serial1.flush();
@@ -427,7 +453,7 @@ void SendTextMessage(String number)
 {
   gsm.listen();// "gsm" serial port is active
   //WAITING FOR GSM TO CONNECTED
-//  ConnectGSM();
+  //  ConnectGSM();
   Serial.println("GSM Connected");
   Serial.println("Sending Text...");
   gsm.print("AT+CMGF=1\r"); // Set the shield to SMS mode
@@ -521,3 +547,88 @@ void waitUntilResponse(String resp) {
   }
 
 } // waitUntilResponse
+
+
+//--------------------------------------------------- Test if RTC running
+uint8_t rtc_isrunning(void) {
+  Wire.beginTransmission(DS1307);
+  Wire.write(byte(0));
+  Wire.endTransmission();
+
+  Wire.requestFrom(DS1307, 1);
+  uint8_t ss = Wire.read();
+  Serial.println(ss);
+  return !(ss >> 7);
+} //rtc_isrunning()
+
+
+//--------------------------------------------------- BCD convertion
+byte decToBcd(byte val) {
+  return ((val / 10 * 16) + (val % 10));
+}
+byte bcdToDec(byte val) {
+  return ((val / 16 * 10) + (val % 16));
+}
+
+void readTime() {
+  Wire.beginTransmission(DS1307);
+  Wire.write(byte(0));
+  Wire.endTransmission();
+  Wire.requestFrom(DS1307, 7);
+  sec = bcdToDec(Wire.read());
+  min = bcdToDec(Wire.read());
+  hour = bcdToDec(Wire.read());
+  weekday = bcdToDec(Wire.read());
+  monthday = bcdToDec(Wire.read());
+  month = bcdToDec(Wire.read());
+  year = bcdToDec(Wire.read());
+
+  tanggal = "";
+  // add tanggal in yyyy-month-day  format( month and day must in 2 digit)
+  tanggal = "20" + String(year) + "-";
+  if (month <10){
+    tanggal += "0";
+  }
+  tanggal = tanggal + month + "-";
+  if (monthday <10){
+    tanggal += "0";
+  }
+  tanggal +=monthday;
+
+  // add tanggal in hh:mm:ss  format( minute and second must in 2 digit)
+  jam = "";
+  if (hour<10){
+    jam+= "0";
+  }
+  jam = jam + hour + ":";
+  if (min<10){
+    jam += "0";
+  }
+  jam = jam + min + ":00";
+} // readTime()
+
+void printTime() {
+  char buffer[3];
+  const char* AMPM = 0;
+  readTime();
+  Serial.print(days[weekday - 1]);
+  Serial.print(F(" "));
+  Serial.print(monthday);
+  Serial.print(F("/"));
+  Serial.print(months[month - 1]);
+  Serial.print(F("/20"));
+  Serial.print(year);
+  Serial.print(F(" "));
+  if (hour > 12) {
+    hour -= 12;
+    AMPM = " PM";
+  }
+  else AMPM = " AM";
+  Serial.print(hour);
+  Serial.print(F(":"));
+  sprintf(buffer, "%02d", minute);
+  Serial.print(buffer);
+  Serial.println(AMPM);
+  Serial.println(tanggal);
+  Serial.println(jam);
+}
