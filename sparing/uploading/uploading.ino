@@ -8,7 +8,7 @@
 
 //-- ESP_TX pin 14/D5 -  15/D8
 //-- ESP_RX pin 12/D6 -  13/D7
-SoftwareSerial ardSerial(14, 12, false, 256);
+SoftwareSerial ardSerial(D3, D4, false, 256);
 
 // replace with your channel’s thingspeak API key and your SSID and password
 String apiKey = "3JEXAHO11O1HUNA3";
