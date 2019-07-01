@@ -23,6 +23,7 @@ void sms2Server(){
   //-- Collect Datas
   //Serial.print(F("SMS: "));  Serial.println(Datas);  
   //SendTextMessage(Datas);
+  AT2Server();
   displayStat("Done");  
   delay(2000);  
 }

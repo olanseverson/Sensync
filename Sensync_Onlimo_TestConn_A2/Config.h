@@ -12,12 +12,17 @@ int idleTime = 0;
 int nxtlup = 5*menit;
 
 //------------------------------------------------------------ SENSOR SIM800
-#define SIM800port Serial2
+#include <SoftwareSerial.h>
+SoftwareSerial SIM800port(12, 13);
+
+//#define SIM800port Serial2
 const String SMScenter = "082213346308";
 const String IDSTASIUN = "UJI-14";
+const String apn = "internet";
+const String user = "";
+const String pass = "";
 
 //------------------------------------------------------------ ESP8266 Config
-#include <SoftwareSerial.h>
 //-- Serial for ESP8266 Wemos D1 mini
 //-- Use Software Serial
 #define ESP_TX  10

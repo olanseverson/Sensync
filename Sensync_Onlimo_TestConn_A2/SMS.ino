@@ -1,3 +1,30 @@
+
+void AT2Server(){
+  sendCommand("AT","OK",5);
+  sendCommand("AT+CREG?","OK",5);
+  sendCommand("AT+COPS=?","+COPS:",20);
+  sendCommand("AT+CSQ","OK",5);
+  sendCommand("AT+CIPSHUT","SHUT",5);
+  sendCommand("AT+CIPMUX=0","OK",5);
+  sendCommand("AT+CGATT=1","OK",5);
+  sendCommand("AT+CSTT=\"" + apn + "\",\"" + user + "\",\"" + pass + "\"","OK",5);
+  sendCommand("AT+CIICR","OK",20);
+  sendCommand("AT+CIFSR",".",20);
+  sendCommand("AT+CIPSTART=\"TCP\",\"server.getsensync.com\",\"80\"","CONNECT",20);//AT+CIPSTART="TCP","http://server.getsensync.com","80"
+  sendCommand("AT+CIPSEND",">",20);
+  
+  String idSensync = "krwgq1";
+  String datana = "/proc/krwg_air/process1.php?id=" + idSensync +"&val0="+String(ph_)+"&val1="+
+  String(do_)+"&val2="+String(dhl_)+"&val3=0"+"&val4="+
+  String(suhu_)+"&val5="+String(sal_)+"&val6="+String(tds_)+"&val7="+
+  String(swsg_)+"&stat=0";
+  datana = "GET " + datana;
+  sendCommand(datana,"SEND",5);
+  sendChar26 ("SEND",20);
+  waitResponse("CLOSED",20);
+  sendCommand("AT+CIPSHUT","SHUT",5);
+}
+
 void SendTextMessage(String pesan){
   Serial.println(F("Sending Text..."));
   Serial.println(sendCommand("AT+IPR=9600","OK",1));
@@ -41,6 +68,7 @@ String sendCommand(String cmd, String resp, int timeout){
   String gsmString;
   bool first=true;
   Serial.print("Send Command > ");Serial.println(cmd);
+  SIM800port.listen();
   SIM800port.println(cmd);
   SIM800port.setTimeout(500);
   for (int i=0 ; i<(timeout*2) ; i++){
